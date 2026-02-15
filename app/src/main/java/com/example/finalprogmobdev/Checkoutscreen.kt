@@ -41,8 +41,7 @@ fun CheckoutScreen(
         OrderConfirmationScreen(
             onTrackOrder = onPlaceOrder,
             onBackToHome = onBackClick
-        )2]
-        3.+6
+        )
     } else {
         Scaffold(
             topBar = {
