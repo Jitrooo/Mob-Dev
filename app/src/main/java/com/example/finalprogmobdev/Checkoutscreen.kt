@@ -20,6 +20,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
+
+// Global order storage
+object OrderDatabase {
+    val allOrders = mutableStateListOf<CustomerOrder>()
+
+    private var orderCounter = 1
+
+    fun createOrder(items: List<CartItem>, total: Double): CustomerOrder {
+        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+        val order = CustomerOrder(
+            orderId = "#ORD-2026-%03d".format(orderCounter++),
+            customerName = "Customer", // In real app, get from logged-in user
+            date = dateFormat.format(Date()),
+            items = items.map { cartItem ->
+                OrderItem(
+                    name = cartItem.name,
+                    quantity = cartItem.quantity,
+                    price = cartItem.price,
+                    imageRes = cartItem.imageRes
+                )
+            },
+            total = total,
+            pickupStatus = PickupStatus.PREPARING_ORDER
+        )
+        allOrders.add(order)
+        return order
+    }
+}
 
 @Composable
 fun CheckoutScreen(
@@ -27,20 +58,18 @@ fun CheckoutScreen(
     onPlaceOrder: () -> Unit
 ) {
     var showConfirmation by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    // Sample order items
-    val orderItems = listOf(
-        CartItem(1, "SHS Uniform", 800.0, R.drawable.mapua_logo, 1)
-    )
-
+    val orderItems = ShoppingCart.items.toList()
     val subtotal = orderItems.sumOf { it.price * it.quantity }
-    val shippingFee = 50.0
+    val shippingFee = 0.0 // Pickup basis, no shipping
     val total = subtotal + shippingFee
 
     if (showConfirmation) {
         OrderConfirmationScreen(
             onTrackOrder = onPlaceOrder,
-            onBackToHome = onBackClick
+            onBackToHome = onPlaceOrder
         )
     } else {
         Scaffold(
@@ -86,7 +115,6 @@ fun CheckoutScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Delivery Address Section
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -100,14 +128,14 @@ fun CheckoutScreen(
                                     .padding(16.dp)
                             ) {
                                 Text(
-                                    text = "Delivery Address",
+                                    text = "Pickup Location",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF2C2C2C)
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "MMCM Campus\nDavao City, Philippines",
+                                    text = "MMCM Campus Bookstore\nDavao City, Philippines",
                                     fontSize = 14.sp,
                                     color = Color(0xFF5C5C5C)
                                 )
@@ -115,7 +143,6 @@ fun CheckoutScreen(
                         }
                     }
 
-                    // Order Items
                     item {
                         Text(
                             text = "Order Summary",
@@ -126,10 +153,14 @@ fun CheckoutScreen(
                     }
 
                     items(orderItems) { item ->
-                        CheckoutItemCard(item = item)
+                        CheckoutItemCard(
+                            name = item.name,
+                            quantity = item.quantity,
+                            price = item.price,
+                            imageRes = item.imageRes
+                        )
                     }
 
-                    // Price breakdown
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -154,8 +185,8 @@ fun CheckoutScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("Shipping Fee:", color = Color(0xFF5C5C5C))
-                                    Text("Php.%.2f".format(shippingFee), fontWeight = FontWeight.SemiBold)
+                                    Text("Pickup Fee:", color = Color(0xFF5C5C5C))
+                                    Text("FREE", fontWeight = FontWeight.SemiBold, color = Color(0xFF4CAF50))
                                 }
                                 Divider(modifier = Modifier.padding(vertical = 12.dp))
                                 Row(
@@ -180,9 +211,62 @@ fun CheckoutScreen(
                     }
                 }
 
-                // Place Order Button
                 Button(
-                    onClick = { showConfirmation = true },
+                    onClick = {
+                        isLoading = true
+                        scope.launch {
+                            // Create order object
+                            val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+                            val orderId = "#ORD-2026-%03d".format(System.currentTimeMillis() % 1000)
+
+                            val order = CustomerOrder(
+                                orderId = orderId,
+                                customerName = UserProfile.studentName,
+                                date = dateFormat.format(Date()),
+                                items = orderItems.map { cartItem ->
+                                    OrderItem(
+                                        name = cartItem.name,
+                                        quantity = cartItem.quantity,
+                                        price = cartItem.price,
+                                        imageRes = cartItem.imageRes
+                                    )
+                                },
+                                total = total,
+                                pickupStatus = PickupStatus.PREPARING_ORDER
+                            )
+
+                            // Save order to Firebase
+                            val result = FirebaseManager.createOrder(order)
+
+                            result.onSuccess {
+                                // Reduce stock for each purchased item
+                                orderItems.forEach { cartItem ->
+                                    // Find product in repository
+                                    val product = ProductRepository.allProducts.find {
+                                        it.name == cartItem.name.substringBefore(" (") // Remove size from name
+                                    }
+
+                                    if (product != null) {
+                                        // Reduce stock locally
+                                        product.stock = maxOf(0, product.stock - cartItem.quantity)
+
+                                        // Update stock in Firebase
+                                        FirebaseManager.updateProductStock(product.id, product.stock)
+                                    }
+                                }
+
+                                // Clear cart and show confirmation
+                                ShoppingCart.clear()
+                                showConfirmation = true
+                                isLoading = false
+                            }.onFailure { error ->
+                                // Handle error - still clear cart but could show error message
+                                ShoppingCart.clear()
+                                showConfirmation = true
+                                isLoading = false
+                            }
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
@@ -190,14 +274,22 @@ fun CheckoutScreen(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFFE31C3D)
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = !isLoading
                 ) {
-                    Text(
-                        text = "PLACE ORDER",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "PLACE ORDER",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
                 }
             }
         }
@@ -205,7 +297,12 @@ fun CheckoutScreen(
 }
 
 @Composable
-fun CheckoutItemCard(item: CartItem) {
+fun CheckoutItemCard(
+    name: String,
+    quantity: Int,
+    price: Double,
+    imageRes: Int
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -219,8 +316,8 @@ fun CheckoutItemCard(item: CartItem) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
-                painter = painterResource(id = item.imageRes),
-                contentDescription = item.name,
+                painter = painterResource(id = imageRes),
+                contentDescription = name,
                 modifier = Modifier
                     .size(60.dp)
                     .clip(RoundedCornerShape(8.dp))
@@ -232,20 +329,20 @@ fun CheckoutItemCard(item: CartItem) {
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.name,
+                    text = name,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF2C2C2C)
                 )
                 Text(
-                    text = "Qty: ${item.quantity}",
+                    text = "Qty: $quantity",
                     fontSize = 14.sp,
                     color = Color(0xFF5C5C5C)
                 )
             }
 
             Text(
-                text = "Php.%.2f".format(item.price * item.quantity),
+                text = "Php.%.2f".format(price * quantity),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF2C2C2C)
@@ -279,7 +376,6 @@ fun OrderConfirmationScreen(
                     .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Success icon
                 Icon(
                     Icons.Default.CheckCircle,
                     contentDescription = "Success",
@@ -289,7 +385,6 @@ fun OrderConfirmationScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Success message
                 Text(
                     text = "Order Placed Successfully!",
                     fontSize = 24.sp,
@@ -301,7 +396,7 @@ fun OrderConfirmationScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "You have now placed the order,\ncheck it now in the track orders",
+                    text = "Your order is being prepared.\nYou can pick it up at MMCM Bookstore.",
                     fontSize = 16.sp,
                     color = Color(0xFF5C5C5C),
                     textAlign = TextAlign.Center,
@@ -310,35 +405,13 @@ fun OrderConfirmationScreen(
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // Track Order button
                 Button(
-                    onClick = onTrackOrder,
+                    onClick = onBackToHome,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFFE31C3D)
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = "TRACK ORDERS",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Back to Home button
-                OutlinedButton(
-                    onClick = onBackToHome,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Color(0xFFE31C3D)
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
@@ -353,4 +426,3 @@ fun OrderConfirmationScreen(
         }
     }
 }
-

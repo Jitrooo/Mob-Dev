@@ -19,6 +19,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+
+// Global user profile storage
+object UserProfile {
+    var studentName by mutableStateOf("Example Student 1")
+}
 
 @Composable
 fun ProfileScreen(
@@ -29,6 +35,51 @@ fun ProfileScreen(
 ) {
     var selectedTab by remember { mutableStateOf("Profile") }
     var notificationsEnabled by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    val scope = rememberCoroutineScope()
+
+    // Load user data from Firebase
+    LaunchedEffect(Unit) {
+        val userId = FirebaseManager.getCurrentUserId()
+        if (userId != null) {
+            scope.launch {
+                FirebaseManager.getUserData(userId).onSuccess { userData ->
+                    val firstName = userData["firstName"] as? String ?: "Student"
+                    val lastName = userData["lastName"] as? String ?: ""
+                    UserProfile.studentName = "$firstName $lastName".trim()
+                    isLoading = false
+                }.onFailure {
+                    isLoading = false
+                }
+            }
+        } else {
+            isLoading = false
+        }
+    }
+
+    if (showEditDialog) {
+        EditNameDialog(
+            currentName = UserProfile.studentName,
+            onDismiss = { showEditDialog = false },
+            onSave = { newName ->
+                UserProfile.studentName = newName
+                showEditDialog = false
+            }
+        )
+    }
+
+    if (showAboutDialog) {
+        AboutUsDialog(
+            onDismiss = { showAboutDialog = false },
+            onBackToHome = {
+                showAboutDialog = false
+                onBackClick()
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -125,11 +176,10 @@ fun ProfileScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { /* Edit profile */ }
+                        .clickable { showEditDialog = true }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Profile icon
                     Box(
                         modifier = Modifier
                             .size(60.dp)
@@ -149,7 +199,7 @@ fun ProfileScreen(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Example Student 1",
+                            text = UserProfile.studentName,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF2C2C2C)
@@ -171,7 +221,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Orders Section
             Text(
                 text = "Orders:",
                 fontSize = 18.sp,
@@ -203,7 +252,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Others Section
             Text(
                 text = "Others:",
                 fontSize = 18.sp,
@@ -214,9 +262,9 @@ fun ProfileScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             SettingsMenuItem(
-                icon = Icons.Default.Language,
-                title = "Language",
-                onClick = { /* Change language */ }
+                icon = Icons.Default.Info,
+                title = "About Us",
+                onClick = { showAboutDialog = true }
             )
 
             SettingsMenuItem(
@@ -229,7 +277,6 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Version
             Text(
                 text = "Version 1.0",
                 fontSize = 14.sp,
@@ -304,3 +351,151 @@ fun SettingsMenuItem(
     }
 }
 
+@Composable
+fun EditNameDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var name by remember { mutableStateOf(currentName) }
+    var isLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Name") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Student Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading
+                )
+                if (isLoading) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val parts = name.trim().split(" ", limit = 2)
+                    val firstName = parts.getOrNull(0) ?: ""
+                    val lastName = parts.getOrNull(1) ?: ""
+
+                    if (firstName.isNotEmpty()) {
+                        isLoading = true
+                        scope.launch {
+                            val userId = FirebaseManager.getCurrentUserId()
+                            if (userId != null) {
+                                FirebaseManager.updateUserName(userId, firstName, lastName).onSuccess {
+                                    UserProfile.studentName = name
+                                    onSave(name)
+                                    isLoading = false
+                                }.onFailure {
+                                    isLoading = false
+                                }
+                            }
+                        }
+                    }
+                },
+                enabled = name.isNotBlank() && !isLoading
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isLoading) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun AboutUsDialog(
+    onDismiss: () -> Unit,
+    onBackToHome: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "About Us",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "MMCM Bookstore App",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE31C3D)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "An E-commerce application designed to bring MMCM school supplies to the comfort of your home. " +
+                            "Purchase booklets, school materials, uniforms, and MMCM merchandise with ease. " +
+                            "You'll receive in-app notifications when your order is ready for pickup at the MMCM Bookstore.",
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Developed By:",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "• Mhar Jethro A. Zacal\n  3rd Year Computer Engineering\n",
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "• Lance Matthew S. Babano\n  3rd Year Electronics Engineering\n",
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Section A361",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "In partial fulfillment of the requirements for CPE144L Mobile Development (Laboratory)",
+                    fontSize = 12.sp,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    color = Color(0xFF5C5C5C)
+                )
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
+                Button(
+                    onClick = onBackToHome,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE31C3D)
+                    )
+                ) {
+                    Text("Back to Home")
+                }
+            }
+        },
+        dismissButton = {}
+    )
+}
