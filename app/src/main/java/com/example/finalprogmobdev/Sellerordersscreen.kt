@@ -21,62 +21,40 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-data class Order(
+enum class PickupStatus {
+    PREPARING_ORDER,
+    TRANSPORTING,
+    READY_TO_PICKUP
+}
+
+data class CustomerOrder(
     val orderId: String,
+    val customerName: String,
     val date: String,
     val items: List<OrderItem>,
     val total: Double,
-    val status: OrderStatus
+    var pickupStatus: PickupStatus
 )
-
-data class OrderItem(
-    val name: String,
-    val quantity: Int,
-    val price: Double,
-    val imageRes: Int
-)
-
-enum class OrderStatus {
-    PROCESSING,
-    SHIPPING,
-    DELIVERED,
-    CANCELLED
-}
 
 @Composable
-fun AllOrdersScreen(
+fun SellerOrdersScreen(
     onBackClick: () -> Unit
 ) {
-    var orders by remember { mutableStateOf<List<Order>>(emptyList()) }
+    // Get real orders from database - use remember with key to recompose on changes
+    var refreshTrigger by remember { mutableStateOf(0) }
+    var orders by remember { mutableStateOf<List<CustomerOrder>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
 
-    // Load user's orders from Firebase
-    LaunchedEffect(Unit) {
-        val userId = FirebaseManager.getCurrentUserId()
-        if (userId != null) {
-            scope.launch {
-                FirebaseManager.loadUserOrders(userId).onSuccess { customerOrders ->
-                    orders = customerOrders.map { customerOrder ->
-                        Order(
-                            orderId = customerOrder.orderId,
-                            date = customerOrder.date,
-                            items = customerOrder.items,
-                            total = customerOrder.total,
-                            status = when (customerOrder.pickupStatus) {
-                                PickupStatus.PREPARING_ORDER -> OrderStatus.PROCESSING
-                                PickupStatus.TRANSPORTING -> OrderStatus.SHIPPING
-                                PickupStatus.READY_TO_PICKUP -> OrderStatus.DELIVERED
-                            }
-                        )
-                    }
-                    isLoading = false
-                }.onFailure {
-                    isLoading = false
-                }
+    // Load ALL orders from Firebase (not just one user's)
+    LaunchedEffect(refreshTrigger) {
+        scope.launch {
+            FirebaseManager.loadAllOrders().onSuccess { allOrders ->
+                orders = allOrders
+                isLoading = false
+            }.onFailure {
+                isLoading = false
             }
-        } else {
-            isLoading = false
         }
     }
 
@@ -101,7 +79,7 @@ fun AllOrdersScreen(
                         )
                     }
                     Text(
-                        text = "My Orders",
+                        text = "Order Management",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF2C2C2C)
@@ -144,7 +122,7 @@ fun AllOrdersScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Your order history will appear here",
+                    text = "Customer orders will appear here",
                     fontSize = 14.sp,
                     color = Color(0xFF9E9E9E)
                 )
@@ -156,10 +134,20 @@ fun AllOrdersScreen(
                     .background(Color(0xFFF5F1E8))
                     .padding(paddingValues),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(orders) { order ->
-                    OrderCard(order = order)
+                    SellerOrderCard(
+                        order = order,
+                        onStatusChange = { newStatus ->
+                            order.pickupStatus = newStatus
+                            // Save to Firebase
+                            scope.launch {
+                                FirebaseManager.updateOrderStatus(order.orderId, newStatus)
+                            }
+                            refreshTrigger++
+                        }
+                    )
                 }
             }
         }
@@ -167,7 +155,10 @@ fun AllOrdersScreen(
 }
 
 @Composable
-fun OrderCard(order: Order) {
+fun SellerOrderCard(
+    order: CustomerOrder,
+    onStatusChange: (PickupStatus) -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -179,17 +170,22 @@ fun OrderCard(order: Order) {
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
+            // Order header
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
                     Text(
                         text = order.orderId,
-                        fontSize = 16.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF2C2C2C)
+                    )
+                    Text(
+                        text = order.customerName,
+                        fontSize = 14.sp,
+                        color = Color(0xFF5C5C5C)
                     )
                     Text(
                         text = order.date,
@@ -198,11 +194,11 @@ fun OrderCard(order: Order) {
                     )
                 }
 
-                val statusColor = when (order.status) {
-                    OrderStatus.PROCESSING -> Color(0xFFFFA726)
-                    OrderStatus.SHIPPING -> Color(0xFF42A5F5)
-                    OrderStatus.DELIVERED -> Color(0xFF66BB6A)
-                    OrderStatus.CANCELLED -> Color(0xFFEF5350)
+                // Status badge
+                val statusColor = when (order.pickupStatus) {
+                    PickupStatus.PREPARING_ORDER -> Color(0xFFFFA726)
+                    PickupStatus.TRANSPORTING -> Color(0xFF42A5F5)
+                    PickupStatus.READY_TO_PICKUP -> Color(0xFF66BB6A)
                 }
 
                 Surface(
@@ -210,7 +206,11 @@ fun OrderCard(order: Order) {
                     shape = RoundedCornerShape(20.dp)
                 ) {
                     Text(
-                        text = order.status.name,
+                        text = when (order.pickupStatus) {
+                            PickupStatus.PREPARING_ORDER -> "Preparing"
+                            PickupStatus.TRANSPORTING -> "Transporting"
+                            PickupStatus.READY_TO_PICKUP -> "Ready"
+                        },
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = statusColor,
@@ -219,23 +219,21 @@ fun OrderCard(order: Order) {
                 }
             }
 
-            Divider(
-                modifier = Modifier.padding(vertical = 12.dp),
-                color = Color(0xFFE0E0E0)
-            )
+            Divider(modifier = Modifier.padding(vertical = 12.dp))
 
+            // Order items
             order.items.forEach { item ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 6.dp),
+                        .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Image(
                         painter = painterResource(id = item.imageRes),
                         contentDescription = item.name,
                         modifier = Modifier
-                            .size(50.dp)
+                            .size(45.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color(0xFFF5F5F5)),
                         contentScale = ContentScale.Crop
@@ -256,21 +254,12 @@ fun OrderCard(order: Order) {
                             color = Color(0xFF9E9E9E)
                         )
                     }
-
-                    Text(
-                        text = "Php.%.2f".format(item.price * item.quantity),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF2C2C2C)
-                    )
                 }
             }
 
-            Divider(
-                modifier = Modifier.padding(vertical = 12.dp),
-                color = Color(0xFFE0E0E0)
-            )
+            Divider(modifier = Modifier.padding(vertical = 12.dp))
 
+            // Total
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -288,6 +277,70 @@ fun OrderCard(order: Order) {
                     color = Color(0xFFE31C3D)
                 )
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Status update buttons
+            Text(
+                text = "Update Pickup Status:",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF2C2C2C)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusButton(
+                    text = "Preparing",
+                    isActive = order.pickupStatus == PickupStatus.PREPARING_ORDER,
+                    color = Color(0xFFFFA726),
+                    onClick = { onStatusChange(PickupStatus.PREPARING_ORDER) },
+                    modifier = Modifier.weight(1f)
+                )
+                StatusButton(
+                    text = "Transporting",
+                    isActive = order.pickupStatus == PickupStatus.TRANSPORTING,
+                    color = Color(0xFF42A5F5),
+                    onClick = { onStatusChange(PickupStatus.TRANSPORTING) },
+                    modifier = Modifier.weight(1f)
+                )
+                StatusButton(
+                    text = "Ready",
+                    isActive = order.pickupStatus == PickupStatus.READY_TO_PICKUP,
+                    color = Color(0xFF66BB6A),
+                    onClick = { onStatusChange(PickupStatus.READY_TO_PICKUP) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
+    }
+}
+
+@Composable
+fun StatusButton(
+    text: String,
+    isActive: Boolean,
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(40.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isActive) color else Color(0xFFE0E0E0),
+            contentColor = if (isActive) Color.White else Color(0xFF757575)
+        ),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }

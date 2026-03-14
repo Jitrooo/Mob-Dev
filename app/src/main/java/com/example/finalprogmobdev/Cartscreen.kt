@@ -25,7 +25,8 @@ data class CartItem(
     val name: String,
     val price: Double,
     val imageRes: Int,
-    var quantity: Int
+    var quantity: Int,
+    val selectedSize: String? = null
 )
 
 @Composable
@@ -35,18 +36,12 @@ fun CartScreen(
 ) {
     var selectedTab by remember { mutableStateOf("Cart") }
 
-    // Sample cart items - in a real app, this would come from a ViewModel/State
-    var cartItems by remember {
-        mutableStateOf(listOf(
-            CartItem(1, "SHS Uniform", 800.0, R.drawable.mapua_logo, 1)
-        ))
-    }
-
+    // Use the global shopping cart
+    val cartItems = ShoppingCart.items
     val total = cartItems.sumOf { it.price * it.quantity }
 
     Scaffold(
         topBar = {
-            // Top bar with title
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = Color(0xFFF5F1E8),
@@ -68,7 +63,6 @@ fun CartScreen(
             }
         },
         bottomBar = {
-            // Bottom navigation bar
             NavigationBar(
                 containerColor = Color.White,
                 tonalElevation = 8.dp
@@ -129,90 +123,123 @@ fun CartScreen(
                 .background(Color(0xFFF5F1E8))
                 .padding(paddingValues)
         ) {
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                // Cart items list
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(cartItems) { item ->
-                        CartItemCard(
-                            item = item,
-                            onQuantityChange = { newQuantity ->
-                                cartItems = cartItems.map {
-                                    if (it.id == item.id) it.copy(quantity = newQuantity)
-                                    else it
-                                }
-                            },
-                            onRemove = {
-                                cartItems = cartItems.filter { it.id != item.id }
-                            }
-                        )
-                    }
-                }
-
-                // Total and checkout section
+            if (cartItems.isEmpty()) {
+                // Empty cart state
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White)
-                        .padding(16.dp)
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    // Dashed line separator
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(Color(0xFFCCCCCC))
+                    Icon(
+                        Icons.Default.ShoppingCart,
+                        contentDescription = "Empty Cart",
+                        modifier = Modifier.size(100.dp),
+                        tint = Color(0xFF9E9E9E)
                     )
-
                     Spacer(modifier = Modifier.height(16.dp))
-
-                    // Total row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "TOTAL:",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2C2C2C)
-                        )
-                        Text(
-                            text = "Php.%.2f".format(total),
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2C2C2C)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Checkout button
+                    Text(
+                        text = "Your cart is empty",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF5C5C5C)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Add some items to get started",
+                        fontSize = 14.sp,
+                        color = Color(0xFF9E9E9E)
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
                     Button(
-                        onClick = onCheckout,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
+                        onClick = onBackClick,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFFE31C3D)
-                        ),
-                        shape = RoundedCornerShape(8.dp),
-                        enabled = cartItems.isNotEmpty()
-                    ) {
-                        Text(
-                            text = "CHECKOUT NOW",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
                         )
+                    ) {
+                        Text("Start Shopping")
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Cart items list
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(cartItems, key = { it.id }) { item ->
+                            CartItemCard(
+                                item = item,
+                                onQuantityChange = { newQuantity ->
+                                    ShoppingCart.updateQuantity(item.id, newQuantity)
+                                },
+                                onRemove = {
+                                    ShoppingCart.removeItem(item.id)
+                                }
+                            )
+                        }
+                    }
+
+                    // Total and checkout section
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White)
+                            .padding(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Color(0xFFCCCCCC))
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "TOTAL:",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2C2C2C)
+                            )
+                            Text(
+                                text = "Php.%.2f".format(total),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2C2C2C)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = onCheckout,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFE31C3D)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "CHECKOUT NOW",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
                     }
                 }
             }
@@ -238,7 +265,6 @@ fun CartItemCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Product image
             Image(
                 painter = painterResource(id = item.imageRes),
                 contentDescription = item.name,
@@ -251,7 +277,6 @@ fun CartItemCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Product info
             Column(
                 modifier = Modifier.weight(1f)
             ) {
@@ -263,7 +288,7 @@ fun CartItemCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Php.%.0f".format(item.price),
+                    text = "Php.%.2f".format(item.price),
                     fontSize = 14.sp,
                     color = Color(0xFF5C5C5C)
                 )
@@ -271,11 +296,9 @@ fun CartItemCard(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Quantity controls
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Plus button
                 IconButton(
                     onClick = { onQuantityChange(item.quantity + 1) },
                     modifier = Modifier.size(32.dp)
@@ -288,7 +311,6 @@ fun CartItemCard(
                     )
                 }
 
-                // Quantity
                 Text(
                     text = item.quantity.toString(),
                     fontSize = 16.sp,
@@ -296,7 +318,6 @@ fun CartItemCard(
                     color = Color(0xFF2C2C2C)
                 )
 
-                // Minus button
                 IconButton(
                     onClick = {
                         if (item.quantity > 1) {
@@ -318,4 +339,3 @@ fun CartItemCard(
         }
     }
 }
-

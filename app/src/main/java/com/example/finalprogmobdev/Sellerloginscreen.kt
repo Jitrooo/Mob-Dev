@@ -22,21 +22,21 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 @Composable
-fun LoginScreen(
+fun SellerLoginScreen(
     onBackClick: () -> Unit,
     onLoginSuccess: () -> Unit
 ) {
-    var email by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
 
-    val scope = rememberCoroutineScope()
+    // Simple hardcoded credentials for demo (in real app, use database)
+    val SELLER_USERNAME = "admin"
+    val SELLER_PASSWORD = "admin123"
 
     Box(
         modifier = Modifier
@@ -72,8 +72,9 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(50.dp))
 
+            // Seller Login title
             Text(
-                text = "Let's Login",
+                text = "Seller Login",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF2C2C2C)
@@ -81,21 +82,11 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Don't have an account? ",
-                    fontSize = 14.sp,
-                    color = Color(0xFF5C5C5C)
-                )
-                Text(
-                    text = "register",
-                    fontSize = 14.sp,
-                    color = Color(0xFFE31C3D),
-                    modifier = Modifier.clickable { onBackClick() }
-                )
-            }
+            Text(
+                text = "Admin Dashboard Access",
+                fontSize = 14.sp,
+                color = Color(0xFF5C5C5C)
+            )
 
             Spacer(modifier = Modifier.height(40.dp))
 
@@ -109,14 +100,14 @@ fun LoginScreen(
                 )
             }
 
-            // Email field
+            // Username field
             OutlinedTextField(
-                value = email,
+                value = username,
                 onValueChange = {
-                    email = it
+                    username = it
                     showError = false
                 },
-                label = { Text("Email") },
+                label = { Text("Username") },
                 modifier = Modifier
                     .width(280.dp)
                     .height(60.dp),
@@ -127,10 +118,8 @@ fun LoginScreen(
                     focusedBorderColor = Color(0xFFE31C3D),
                     errorBorderColor = Color(0xFFE31C3D)
                 ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                isError = showError && email.isEmpty(),
-                singleLine = true,
-                enabled = !isLoading
+                isError = showError && username.isEmpty(),
+                singleLine = true
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -164,47 +153,22 @@ fun LoginScreen(
                         )
                     }
                 },
-                singleLine = true,
-                enabled = !isLoading
+                singleLine = true
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Login button
             Button(
                 onClick = {
-                    // Validation
-                    if (email.isEmpty() || password.isEmpty()) {
+                    if (username.isEmpty() || password.isEmpty()) {
                         errorMessage = "Please fill in all the boxes"
                         showError = true
+                    } else if (username == SELLER_USERNAME && password == SELLER_PASSWORD) {
+                        onLoginSuccess()
                     } else {
-                        // Login with Firebase
-                        isLoading = true
-                        scope.launch {
-                            val result = FirebaseManager.loginUser(email, password)
-
-                            isLoading = false
-
-                            result.onSuccess { userId ->
-                                // Load user data to update profile
-                                FirebaseManager.getUserData(userId).onSuccess { userData ->
-                                    val firstName = userData["firstName"] as? String ?: "Student"
-                                    val lastName = userData["lastName"] as? String ?: ""
-                                    UserProfile.studentName = "$firstName $lastName"
-                                }
-                                onLoginSuccess()
-                            }.onFailure { error ->
-                                errorMessage = when {
-                                    error.message?.contains("no user record") == true ->
-                                        "No account found with this email"
-                                    error.message?.contains("password is invalid") == true ||
-                                            error.message?.contains("INVALID_LOGIN_CREDENTIALS") == true ->
-                                        "Invalid email or password"
-                                    else -> "Login failed: ${error.message}"
-                                }
-                                showError = true
-                            }
-                        }
+                        errorMessage = "Invalid username or password"
+                        showError = true
                     }
                 },
                 modifier = Modifier
@@ -213,23 +177,25 @@ fun LoginScreen(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFFE31C3D)
                 ),
-                shape = MaterialTheme.shapes.small,
-                enabled = !isLoading
+                shape = MaterialTheme.shapes.small
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else {
-                    Text(
-                        text = "LOGIN",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
-                }
+                Text(
+                    text = "LOGIN AS SELLER",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Back to customer login
+            Text(
+                text = "Back to Customer Login",
+                fontSize = 14.sp,
+                color = Color(0xFFE31C3D),
+                modifier = Modifier.clickable { onBackClick() }
+            )
 
             Spacer(modifier = Modifier.height(40.dp))
         }

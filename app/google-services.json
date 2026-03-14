@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "322954103890",
+    "project_id": "mmcm-bookstore",
+    "storage_bucket": "mmcm-bookstore.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:322954103890:android:606d1664756522f963a38b",
+        "android_client_info": {
+          "package_name": "com.example.finalprogmobdev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5vsCquba3OyOfVJDC_pFxRBNWJVWJni8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

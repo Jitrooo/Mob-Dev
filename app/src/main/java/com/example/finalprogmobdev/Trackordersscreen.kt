@@ -20,51 +20,60 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.launch
 
-data class DeliveryOrder(
+data class PickupOrder(
     val orderId: String,
     val date: String,
     val items: List<OrderItem>,
     val total: Double,
-    val deliveryStatus: DeliveryStatus,
-    var isReceived: Boolean = false
+    val pickupStatus: PickupOrderStatus,
+    var isPickedUp: Boolean = false
 )
 
-enum class DeliveryStatus {
-    ORDER_PLACED,
-    PREPARING,
-    OUT_FOR_DELIVERY,
-    DELIVERED
+enum class PickupOrderStatus {
+    PREPARING_ORDER,
+    TRANSPORTING,
+    READY_TO_PICKUP
 }
 
 @Composable
 fun TrackOrdersScreen(
     onBackClick: () -> Unit
 ) {
-    // Sample delivery orders
-    var orders by remember {
-        mutableStateOf(listOf(
-            DeliveryOrder(
-                orderId = "#ORD-2024-001",
-                date = "Feb 4, 2024",
-                items = listOf(
-                    OrderItem("SHS Uniform", 1, 800.0, R.drawable.mapua_logo),
-                    OrderItem("ID Sling", 2, 100.0, R.drawable.mapua_logo)
-                ),
-                total = 1000.0,
-                deliveryStatus = DeliveryStatus.OUT_FOR_DELIVERY
-            ),
-            DeliveryOrder(
-                orderId = "#ORD-2024-002",
-                date = "Feb 1, 2024",
-                items = listOf(
-                    OrderItem("MMCM Jacket", 1, 1500.0, R.drawable.mapua_logo)
-                ),
-                total = 1500.0,
-                deliveryStatus = DeliveryStatus.DELIVERED,
-                isReceived = false
-            )
-        ))
+    var orders by remember { mutableStateOf<List<PickupOrder>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+
+    // Load user's orders from Firebase
+    LaunchedEffect(Unit) {
+        val userId = FirebaseManager.getCurrentUserId()
+        if (userId != null) {
+            scope.launch {
+                FirebaseManager.loadUserOrders(userId).onSuccess { customerOrders ->
+                    orders = customerOrders.map { customerOrder ->
+                        PickupOrder(
+                            orderId = customerOrder.orderId,
+                            date = customerOrder.date,
+                            items = customerOrder.items,
+                            total = customerOrder.total,
+                            pickupStatus = when (customerOrder.pickupStatus) {
+                                PickupStatus.PREPARING_ORDER -> PickupOrderStatus.PREPARING_ORDER
+                                PickupStatus.TRANSPORTING -> PickupOrderStatus.TRANSPORTING
+                                PickupStatus.READY_TO_PICKUP -> PickupOrderStatus.READY_TO_PICKUP
+                            },
+                            isPickedUp = false
+                        )
+                    }
+                    isLoading = false
+                }.onFailure {
+                    isLoading = false
+                }
+            }
+        } else {
+            isLoading = false
+        }
     }
 
     Scaffold(
@@ -97,33 +106,71 @@ fun TrackOrdersScreen(
             }
         }
     ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFFF5F1E8))
-                .padding(paddingValues),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(orders) { order ->
-                TrackingCard(
-                    order = order,
-                    onOrderReceived = {
-                        orders = orders.map {
-                            if (it.orderId == order.orderId) it.copy(isReceived = true)
-                            else it
-                        }
-                    }
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color(0xFFE31C3D))
+            }
+        } else if (orders.isEmpty()) {
+            // Empty state
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    Icons.Default.LocalShipping,
+                    contentDescription = "No Orders",
+                    modifier = Modifier.size(100.dp),
+                    tint = Color(0xFF9E9E9E)
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "No orders to track",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF5C5C5C)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Your orders will appear here",
+                    fontSize = 14.sp,
+                    color = Color(0xFF9E9E9E)
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFFF5F1E8))
+                    .padding(paddingValues),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(orders) { order ->
+                    PickupTrackingCard(
+                        order = order,
+                        onOrderPickedUp = {
+                            // Mark order as picked up
+                        }
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun TrackingCard(
-    order: DeliveryOrder,
-    onOrderReceived: () -> Unit
+fun PickupTrackingCard(
+    order: PickupOrder,
+    onOrderPickedUp: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -158,17 +205,16 @@ fun TrackingCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Delivery status timeline
-            DeliveryTimeline(status = order.deliveryStatus)
+            // Pickup status timeline
+            PickupTimeline(status = order.pickupStatus)
 
             Spacer(modifier = Modifier.height(20.dp))
 
             // Current status text
-            val statusText = when (order.deliveryStatus) {
-                DeliveryStatus.ORDER_PLACED -> "Your order has been placed"
-                DeliveryStatus.PREPARING -> "We're preparing your order"
-                DeliveryStatus.OUT_FOR_DELIVERY -> "Your order is out for delivery"
-                DeliveryStatus.DELIVERED -> if (order.isReceived) "Order completed" else "Your order has been delivered"
+            val statusText = when (order.pickupStatus) {
+                PickupOrderStatus.PREPARING_ORDER -> "We're preparing your order"
+                PickupOrderStatus.TRANSPORTING -> "Your order is being transported to pickup location"
+                PickupOrderStatus.READY_TO_PICKUP -> if (order.isPickedUp) "Order completed" else "Your order is ready for pickup!"
             }
 
             Surface(
@@ -182,7 +228,7 @@ fun TrackingCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        Icons.Default.LocalShipping,
+                        Icons.Default.Store,
                         contentDescription = null,
                         tint = Color(0xFF42A5F5),
                         modifier = Modifier.size(24.dp)
@@ -260,36 +306,57 @@ fun TrackingCard(
                 )
             }
 
-            // Order Received button (only show if delivered and not received)
-            if (order.deliveryStatus == DeliveryStatus.DELIVERED && !order.isReceived) {
+            // Order Picked Up button (only show if ready and not picked up)
+            if (order.pickupStatus == PickupOrderStatus.READY_TO_PICKUP && !order.isPickedUp) {
                 Spacer(modifier = Modifier.height(16.dp))
 
+                var isUpdating by remember { mutableStateOf(false) }
+                val scope = rememberCoroutineScope()
+
                 Button(
-                    onClick = onOrderReceived,
+                    onClick = {
+                        isUpdating = true
+                        scope.launch {
+                            // Mark as picked up in local state
+                            order.isPickedUp = true
+                            // Could also update in Firebase if needed
+                            // For now, just update the UI
+                            isUpdating = false
+                            onOrderPickedUp()
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF66BB6A)
                     ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = !isUpdating
                 ) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "ORDER RECEIVED",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (isUpdating) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "ORDER PICKED UP",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
-            // Show completion badge if received
-            if (order.isReceived) {
+            // Show completion badge if picked up
+            if (order.isPickedUp) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Surface(
@@ -324,12 +391,11 @@ fun TrackingCard(
 }
 
 @Composable
-fun DeliveryTimeline(status: DeliveryStatus) {
+fun PickupTimeline(status: PickupOrderStatus) {
     val steps = listOf(
-        "Order Placed" to DeliveryStatus.ORDER_PLACED,
-        "Preparing" to DeliveryStatus.PREPARING,
-        "Out for Delivery" to DeliveryStatus.OUT_FOR_DELIVERY,
-        "Delivered" to DeliveryStatus.DELIVERED
+        "Preparing Order" to PickupOrderStatus.PREPARING_ORDER,
+        "Transporting" to PickupOrderStatus.TRANSPORTING,
+        "Ready to Pickup" to PickupOrderStatus.READY_TO_PICKUP
     )
 
     Row(
@@ -392,4 +458,3 @@ fun DeliveryTimeline(status: DeliveryStatus) {
         }
     }
 }
-

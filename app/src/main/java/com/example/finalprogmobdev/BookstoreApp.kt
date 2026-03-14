@@ -16,7 +16,8 @@ fun BookstoreApp() {
         composable("introduction") {
             IntroductionScreen(
                 onRegisterClick = { navController.navigate("register") },
-                onLoginClick = { navController.navigate("login") }
+                onLoginClick = { navController.navigate("login") },
+                onSellerLoginClick = { navController.navigate("sellerLogin") }
             )
         }
 
@@ -42,6 +43,50 @@ fun BookstoreApp() {
             )
         }
 
+        // Seller routes
+        composable("sellerLogin") {
+            SellerLoginScreen(
+                onBackClick = { navController.popBackStack() },
+                onLoginSuccess = {
+                    navController.navigate("sellerDashboard") {
+                        popUpTo("introduction") { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable("sellerDashboard") {
+            SellerDashboardScreen(
+                onNavigateToInventory = { navController.navigate("sellerInventory") },
+                onNavigateToOrders = { navController.navigate("sellerOrders") },
+                onNavigateToTransactions = { navController.navigate("sellerTransactions") },
+                onLogout = {
+                    navController.navigate("introduction") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable("sellerInventory") {
+            SellerInventoryScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable("sellerOrders") {
+            SellerOrdersScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        composable("sellerTransactions") {
+            SellerTransactionsScreen(
+                onBackClick = { navController.popBackStack() }
+            )
+        }
+
+        // Customer routes
         composable("home") {
             HomeScreen(
                 onNavigateToProducts = { navController.navigate("products") },

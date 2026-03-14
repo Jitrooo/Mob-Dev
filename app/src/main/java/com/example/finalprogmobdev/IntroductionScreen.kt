@@ -2,6 +2,7 @@ package com.example.finalprogmobdev
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -17,7 +18,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun IntroductionScreen(
     onRegisterClick: () -> Unit,
-    onLoginClick: () -> Unit
+    onLoginClick: () -> Unit,
+    onSellerLoginClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -163,6 +165,17 @@ fun IntroductionScreen(
                     letterSpacing = 0.5.sp
                 )
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Seller Login link
+            Text(
+                text = "Login as Seller",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFFE31C3D),
+                modifier = Modifier.clickable { onSellerLoginClick() }
+            )
         }
     }
 }
